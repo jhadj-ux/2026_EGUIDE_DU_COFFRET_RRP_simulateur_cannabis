@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulation de freinage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Open+Sans:wght@400;600;700&display=swap">
+<style>
+/* VOICE: pédagogique et sobre, comme l'e-guide Medisur : on montre, on ne dramatise pas
+   IDEA: deux voies de circulation côte à côte, comme deux couloirs d'un banc d'essai de freinage
+   PICTURE: la route vue de côté, les deux voitures qui roulent vers le même piéton, avec les distances de réaction et de freinage peintes au sol
+   COLOUR and TYPE: ardoise Medisur pour la route, turquoise pour le conducteur sobre, jaune et rouge pour la réaction et le freinage; Montserrat + Open Sans
+   LAYOUT: titre court, puis les deux voies en grand, puis réglages et bilan; tout tient dans un encadré Genially de 900×560 */
+:root{color-scheme:dark;--bg:light-dark(#eaf7f7,#14191d);--card:light-dark(#fff,#222a31);--ink:light-dark(#22292f,#eef3f4);
+--mute:light-dark(#5b6770,#a7b3ba);--line:light-dark(#d4e3e4,#36414a);--field:light-dark(#f4f9f9,#1b2227);
+--tq:#66cccc;--tq-d:#3fa9a8;--yl:#fbd126;--or:#f39a1e;--bad:#e3412f;--ok:#2fa866;--road:#2b3239}
+:root[data-theme]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{height:100%}body{margin:0;background:#1f252b;color:var(--ink);font:15px/1.45 "Open Sans",system-ui,sans-serif;overflow:hidden}
+.wrap{position:absolute;left:0;top:0;width:1530px;height:570px;transform-origin:0 0;padding:18px 22px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:14px 18px}
+.head{display:flex;align-items:baseline;gap:6px 18px;flex-wrap:wrap}
+.left{display:flex;flex-direction:column;min-height:0}
+.right{display:flex;flex-direction:column;gap:12px;min-height:0}
+h1{font:800 38px/1.1 Montserrat,sans-serif;margin:0}
+.sub{margin:0;color:var(--mute);font-size:21px}
+.card{background:var(--card);border-radius:16px;padding:14px;flex:1;display:flex;flex-direction:column;min-height:0}
+.fig{position:relative;flex:1;min-height:0}.fig>svg{position:absolute;inset:0;width:100%;height:100%}
+.ctrl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-top:12px;padding-right:200px}
+.go{min-height:56px;padding:0 28px;border:0;border-radius:999px;background:var(--yl);color:#222;font:800 21px Montserrat,sans-serif;cursor:pointer}
+.go:hover{filter:brightness(.96)}
+.seg{display:flex;gap:4px}
+.seg button{min-height:52px;padding:0 18px;border:2px solid var(--line);background:var(--field);color:var(--ink);border-radius:12px;font:700 19px "Open Sans",sans-serif;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--tq);border-color:var(--tq);color:#123}
+.lab{font-weight:600;font-size:19px;color:var(--mute)}
+.dist{display:flex;align-items:center;gap:8px}
+.dist input{width:220px;accent-color:var(--tq-d)}
+.dist output{font:800 21px Montserrat,sans-serif;white-space:nowrap;width:80px}
+button:focus-visible,input:focus-visible{outline:3px solid var(--yl);outline-offset:2px}
+.sum{display:flex;flex-direction:column;gap:12px}
+.res{border-radius:14px;padding:12px 14px;background:var(--card);border-left:6px solid var(--tq-d)}
+.res.c{border-left-color:var(--bad)}
+.res h2{font:800 15px Montserrat,sans-serif;margin:0 0 6px}
+.res table{width:100%;border-collapse:collapse;font-size:14px}
+.res td{padding:2px 0}.res td:last-child{text-align:right;font-weight:700;white-space:nowrap}
+.verdict{margin-top:8px;font:800 15px Montserrat,sans-serif}
+@media(max-aspect-ratio:1/1){.wrap{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);padding:20px 18px}.head{flex-direction:column;gap:6px}.head h1{font-size:30px;text-wrap:balance}.right .note{margin-top:4px}.ctrl{gap:12px}.dist input{width:200px}}
+.note{font-size:12px;color:var(--mute);margin:auto 0 0;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+  <div class="card">
+    <div class="fig"><svg id="scene" role="img" aria-label="Deux voitures roulent vers un piéton, l'une avec 1 seconde de temps de réaction, l'autre avec 3 secondes"></svg></div>
+    <div class="ctrl">
+      <button type="button" class="go" id="go">▶ Lancer la simulation</button>
+      <span class="lab" id="l-v">Vitesse</span>
+      <div class="seg" role="group" aria-labelledby="l-v" id="vit">
+        <button type="button" data-v="50" aria-pressed="false">50 km/h</button>
+        <button type="button" data-v="90" aria-pressed="true">90 km/h</button>
+        <button type="button" data-v="130" aria-pressed="false">130 km/h</button>
+      </div>
+      <label class="lab" for="d">Piéton à</label>
+      <div class="dist"><input type="range" id="d" min="30" max="160" step="5" value="100"><output id="dOut">100 m</output></div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+{
+const DRV=[{n:"Conducteur sobre",tr:1,col:"#3fa9a8",soft:"#66cccc"},{n:"Sous l'effet du cannabis",tr:3,col:"#e3412f",soft:"#f08a7d"}];
+/* Freinage calé sur l'astuce de l'e-guide : avec 1 s de réaction, distance d'arrêt = (chiffre des dizaines)² */
+const acc=()=>{const v=st.kmh/3.6;return v*v/(2*((st.kmh/10)**2-v))};
+const st={kmh:90,D:100,t:0,run:false};
+const $=id=>document.getElementById(id);
+const f1=x=>(Math.round(x*10)/10).toString().replace(".",",");
+const f0=x=>String(Math.round(x));
+
+function plan(d){
+  const A=acc(), v=st.kmh/3.6, dr=v*d.tr, db=v*v/(2*A), stop=dr+db;
+  let hit=null;
+  if(dr>=st.D){hit={t:st.D/v,v:v}}
+  else if(stop>st.D){const s=st.D-dr,vi=Math.sqrt(v*v-2*A*s);hit={t:d.tr+(v-vi)/A,v:vi}}
+  return {v,dr,db,stop,hit,tEnd:hit?hit.t:d.tr+v/A};
+}
+function pos(p,d,t){
+  const A=acc(), v=p.v;let x,sp;
+  if(t<=d.tr){x=v*t;sp=v}else{const tb=Math.min(t-d.tr,v/A);x=p.dr+v*tb-A*tb*tb/2;sp=Math.max(0,v-A*tb)}
+  if(p.hit&&x>=st.D){x=st.D;sp=p.hit.v}
+  const hit=p.hit&&t>=p.hit.t;
+  return {x,sp,phase:hit?"Choc":t<d.tr?"Réaction":(sp>0.05?"Freinage":"Arrêt")};
+}
+
+const svg=$("scene");
+const cur=()=>true;
+function car(x,y,s,col){return `<g transform="translate(${x},${y}) scale(${s})">
+ <path d="M-46,-6 L-40,-20 L-14,-30 L14,-30 L30,-18 L44,-14 Q48,-12 48,-4 L48,4 L-46,4 Z" fill="${col}"/>
+ <path d="M-10,-26 L12,-26 L24,-17 L-10,-17 Z M-34,-17 L-14,-26 L-14,-17 Z" fill="#dff4f4" opacity=".9"/>
+ <circle cx="-28" cy="5" r="8" fill="#1a1f24"/><circle cx="-28" cy="5" r="3.5" fill="#9aa4ab"/>
+ <circle cx="30" cy="5" r="8" fill="#1a1f24"/><circle cx="30" cy="5" r="3.5" fill="#9aa4ab"/>
+ <rect x="44" y="-11" width="5" height="4" rx="1" fill="#fbd126"/></g>`}
+function ped(x,y,s){return `<g transform="translate(${x},${y}) scale(${s})" fill="#fbd126" stroke="#fbd126" stroke-linecap="round">
+ <circle cx="0" cy="-44" r="6" stroke="none"/><path d="M0,-37 L0,-16 M0,-30 L-9,-20 M0,-30 L9,-22 M0,-16 L-8,0 M0,-16 L7,0" fill="none" stroke-width="4.5"/></g>`}
+
+
+function topCar(cx,yf,s,col){return `<g transform="translate(${cx},${yf}) scale(${s})">
+ <rect x="-21" y="10" width="7" height="16" rx="3" fill="#1a1f24"/><rect x="14" y="10" width="7" height="16" rx="3" fill="#1a1f24"/>
+ <rect x="-21" y="52" width="7" height="16" rx="3" fill="#1a1f24"/><rect x="14" y="52" width="7" height="16" rx="3" fill="#1a1f24"/>
+ <rect x="-18" y="0" width="36" height="78" rx="12" fill="${col}"/>
+ <path d="M-14,22 Q0,14 14,22 L12,32 L-12,32 Z" fill="#dff4f4" opacity=".9"/>
+ <rect x="-12" y="40" width="24" height="22" rx="5" fill="#000" opacity=".18"/>
+ <rect x="-15" y="1" width="8" height="4" rx="2" fill="#fbd126"/><rect x="7" y="1" width="8" height="4" rx="2" fill="#fbd126"/></g>`}
+function drawV(W,H){
+  const P=DRV.map(plan);
+  const maxX=Math.max(st.D+12,...P.map(p=>Math.min(p.stop,st.D+12)))+4;
+  const gap=12,colW=(W-gap)/2,top=110,bot=H-34,sc=Math.max(.6,Math.min(1.3,colW/200));
+  const sy=m=>bot-80*sc-(m/maxX)*(bot-80*sc-top-30);
+  let g="";
+  DRV.forEach((d,i)=>{
+    const p=P[i],x0=i*(colW+gap),cx=x0+colW/2+8;
+    g+=`<rect x="${x0}" y="0" width="${colW}" height="${H-24}" rx="12" fill="#353f48"/>`;
+    for(let m=0;m<=maxX;m+=10)g+=`<rect x="${cx-1.5}" y="${sy(m+5)}" width="3" height="${Math.max(6,sy(m)-sy(m+5))*0.6}" fill="#fff" opacity=".25"/>`;
+    const yr=sy(Math.min(p.dr,st.D)),yb=sy(Math.min(p.stop,st.D)),y0=sy(0);
+    g+=`<rect x="${x0+10}" y="${yr}" width="8" height="${Math.max(0,y0-yr)}" fill="#fbd126"/>`;
+    if(p.dr<st.D)g+=`<rect x="${x0+10}" y="${yb}" width="8" height="${Math.max(0,yr-yb)}" fill="#f39a1e"/>`;
+    g+=`<text x="${x0+14}" y="26" fill="#fff" font-family="Montserrat,sans-serif" font-weight="800" font-size="22">${i?"Sous cannabis":"Conducteur sobre"}</text>`;
+    g+=`<text x="${x0+14}" y="52" fill="#cfd8dc" font-size="18">Réaction : ${d.tr} s</text>`;
+    const c=pos(p,d,st.t);
+    if(st.t>0)g+=`<text x="${x0+14}" y="80" fill="${c.phase==="Réaction"?"#fbd126":c.phase==="Freinage"?"#f39a1e":c.phase==="Choc"?"#ff7a6b":"#cfd8dc"}" font-weight="700" font-size="18">${c.phase} · ${f0(c.sp*3.6)} km/h · ${f1(Math.min(st.t,p.tEnd))} s</text>`;
+    g+=ped(cx,sy(st.D)-4,sc*1.1);
+    g+=topCar(cx,sy(c.x),sc,d.col);
+    if(p.hit&&st.t>=p.hit.t)g+=`<g transform="translate(${cx+30*sc},${sy(st.D)-30*sc})"><circle r="${15*sc}" fill="#e3412f"/><text y="${5*sc}" text-anchor="middle" fill="#fff" font-weight="800" font-size="${15*sc}">!</text></g>`;
+    if(!p.hit&&st.t>=p.tEnd&&st.t>0)g+=`<text x="${cx}" y="${(sy(p.stop)+sy(st.D))/2+20}" text-anchor="middle" fill="#66cccc" font-weight="800" font-size="20">${f0(st.D-p.stop)} m d'avance</text>`;
+  });
+  g+=`<g font-size="16" fill="var(--mute)"><rect x="4" y="${H-14}" width="16" height="8" fill="#fbd126"/><text x="26" y="${H-5}">Distance de réaction</text>
+  <rect x="${W/2+6}" y="${H-14}" width="16" height="8" fill="#f39a1e"/><text x="${W/2+28}" y="${H-5}">Distance de freinage</text></g>`;
+  svg.innerHTML=g;
+}
+function draw(){
+  const W=svg.clientWidth,H=svg.clientHeight;if(!W||!H)return;
+  if(H>W*1.1&&cur())return drawV(W,H);
+  const P=DRV.map(plan);
+  const maxX=Math.max(st.D+12,...P.map(p=>Math.min(p.stop,st.D+12)))+4;
+  const L=W<520?10:20,R=W<520?14:28, sx=m=>L+60+(m/maxX)*(W-L-R-60);
+  const laneH=(H-30)/2;
+  const sc=Math.max(.5,Math.min(1.4,W/900,laneH/130));
+  let g="";
+  DRV.forEach((d,i)=>{
+    const p=P[i],y0=8+i*laneH,base=y0+laneH-34;
+    g+=`<rect x="0" y="${y0}" width="${W}" height="${laneH-6}" rx="12" fill="#353f48"/>`;
+    g+=`<rect x="0" y="${base+12}" width="${W}" height="3" fill="#fff" opacity=".18"/>`;
+    for(let m=0;m<=maxX;m+=10)g+=`<rect x="${sx(m)}" y="${base+26}" width="${Math.max(6,(sx(5)-sx(0)))}" height="3" fill="#fff" opacity=".35"/>`;
+    const xr0=sx(0),xr1=sx(Math.min(p.dr,st.D)),xb1=sx(Math.min(p.stop,st.D));
+    g+=`<rect x="${xr0}" y="${base+16}" width="${Math.max(0,xr1-xr0)}" height="8" fill="#fbd126" opacity=".9"/>`;
+    if(p.dr<st.D)g+=`<rect x="${xr1}" y="${base+16}" width="${Math.max(0,xb1-xr1)}" height="8" fill="#f39a1e" opacity=".9"/>`;
+    const nar=W<480;const lab=`${nar?(i?"Sous cannabis":"Sobre"):d.n} · réaction ${d.tr} s`;
+    g+=`<text x="${L}" y="${y0+34}" fill="#fff" font-family="Montserrat,sans-serif" font-weight="800" font-size="${W<520?13:27}">${lab}</text>`;
+    const c=pos(p,d,st.t);
+    g+=`<text x="${nar?L:W-R}" y="${nar?y0+40:y0+32}" text-anchor="${nar?"start":"end"}" fill="${c.phase==="Réaction"?"#fbd126":c.phase==="Freinage"?"#f39a1e":c.phase==="Choc"?"#ff7a6b":"#cfd8dc"}" font-weight="700" font-size="${W<520?12:24}">${st.t>0?c.phase+" · "+f0(c.sp*3.6)+" km/h · "+f1(Math.min(st.t,p.tEnd))+" s":""}</text>`;
+    if(st.t>=p.tEnd&&st.t>0)g+=`<text x="${nar?L:W-R}" y="${nar?y0+58:y0+56}" text-anchor="${nar?"start":"end"}" fill="#cfd8dc" font-size="${nar?13:21}">Distance d'arrêt : ${f0(p.stop)} m</text>`;
+    g+=ped(sx(st.D)+16*sc,base+12,sc*1.05);
+    const hitNow=p.hit&&st.t>=p.hit.t;
+    g+=car(sx(c.x)-48*sc,base+4,sc,d.col);
+    if(hitNow)g+=`<g transform="translate(${sx(st.D)+4},${base-22*sc})"><circle r="${16*sc}" fill="#e3412f"/><text y="${5*sc}" text-anchor="middle" fill="#fff" font-weight="800" font-size="${15*sc}">!</text></g>`;
+    if(!p.hit&&st.t>=p.tEnd&&st.t>0)g+=`<text x="${(sx(p.stop)+sx(st.D))/2}" y="${base-36*sc}" text-anchor="middle" fill="#66cccc" font-weight="800" font-size="${W<520?12:24}">${f0(st.D-p.stop)} m d'avance</text>`;
+  });
+  g+=`<g font-size="17" fill="var(--mute)"><rect x="${L}" y="${H-14}" width="18" height="8" fill="#fbd126"/><text x="${L+26}" y="${H-5}">Distance de réaction</text>
+  <rect x="${L+230}" y="${H-14}" width="18" height="8" fill="#f39a1e"/><text x="${L+256}" y="${H-5}">Distance de freinage</text></g>`;
+  svg.innerHTML=g;
+}
+
+function summary(){return;
+  DRV.forEach((d,i)=>{
+    const p=plan(d),el=$("r"+i);el.classList.toggle("c",!!p.hit);
+    el.innerHTML=`<h2>${d.n} (${d.tr} s)</h2><table>
+     <tr><td>Distance parcourue avant de freiner</td><td>${f0(p.dr)} m</td></tr>
+     <tr><td>Distance de freinage</td><td>${f0(p.db)} m</td></tr>
+     <tr><td>Distance d'arrêt totale</td><td>${f0(p.stop)} m</td></tr></table>
+     <div class="verdict" style="color:${p.hit?"var(--bad)":"var(--ok)"}">${p.hit
+       ?(p.dr>=st.D?`Choc à ${f0(p.v*3.6)} km/h, sans avoir commencé à freiner`:`Choc avec le piéton à ${f0(p.hit.v*3.6)} km/h`)
+       :`Arrêt ${f0(st.D-p.stop)} m avant le piéton`}</div>`;
+  });
+}
+
+let raf=null,t0=0;
+function loop(ts){
+  if(!t0)t0=ts;st.t=(ts-t0)/1000;
+  const end=Math.max(...DRV.map(d=>plan(d).tEnd))+0.6;
+  if(st.t>=end){st.t=end;st.run=false;$("go").textContent="↻ Rejouer";draw();return}
+  draw();raf=requestAnimationFrame(loop);
+}
+function start(){
+  cancelAnimationFrame(raf);t0=0;st.t=0;st.run=true;$("go").textContent="■ Arrêter";
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches){st.t=99;st.run=false;$("go").textContent="↻ Rejouer";draw();return}
+  raf=requestAnimationFrame(loop);
+}
+function reset(){cancelAnimationFrame(raf);st.run=false;st.t=0;$("go").textContent="▶ Lancer la simulation";summary();draw()}
+
+$("go").addEventListener("click",()=>{if(st.run){reset()}else start()});
+$("vit").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;st.kmh=Number(b.dataset.v);
+  $("vit").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));reset()});
+$("d").addEventListener("input",e=>{st.D=Number(e.target.value);$("dOut").textContent=st.D+" m";reset()});
+const wrap=document.querySelector(".wrap");
+function fit(){const portrait=innerHeight>innerWidth*1.1,bw=portrait?570:1530,bh=portrait?1530:570;
+  wrap.style.width=bw+"px";wrap.style.height=bh+"px";
+  const k=Math.min(innerWidth/bw,innerHeight/bh);
+  wrap.style.transform=`translate(${(innerWidth-bw*k)/2}px,${(innerHeight-bh*k)/2}px) scale(${k})`;draw()}
+addEventListener("resize",fit);
+const ro=new ResizeObserver(draw);ro.observe(svg);fit();
+summary();draw();
+}
+</script>
+</body>
+</html>
